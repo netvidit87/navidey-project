@@ -8,7 +8,8 @@ Free and simple video hosting (React + Vite + Cloudflare Pages) for **navidey.si
 - **Video src otomatis** pakai domain Cloudflare kamu  
   Contoh: `https://cdn.navidey.site/xxx.mp4` atau `https://cdn.navidey.pages.dev/xxx.mp4`
 - **Iklan load dari API sendiri** (`/api/ad_type`)
-- **Cloudflare Turnstile** hanya di halaman video (`/v/`) — user harus lolos verifikasi dulu baru bisa nonton
+- **Cloudflare Turnstile** hanya di halaman video (`/v/`) — user harus lolos verifikasi dulu baru bisa nonton  
+  (status verifikasi disimpan di localStorage selama **24 jam**, jadi user tidak diminta verifikasi berulang-ulang)
 
 ## Setup
 

@@ -4,6 +4,42 @@ import { getVideoUrl } from '../config'
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAF-N4cGvBQXckJzF'
 
+// Simpan status verifikasi di localStorage agar user tidak perlu verifikasi terus-menerus
+const VERIFY_STORAGE_KEY = 'navidey_turnstile_verified'
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000 // 24 jam (bisa diubah sesuai kebutuhan)
+
+function isAlreadyVerified() {
+  try {
+    const raw = localStorage.getItem(VERIFY_STORAGE_KEY)
+    if (!raw) return false
+    const data = JSON.parse(raw)
+    if (!data || !data.ts) return false
+    // Masih valid jika belum lewat TTL
+    return Date.now() - data.ts < VERIFY_TTL_MS
+  } catch {
+    return false
+  }
+}
+
+function markVerified() {
+  try {
+    localStorage.setItem(
+      VERIFY_STORAGE_KEY,
+      JSON.stringify({ ts: Date.now() })
+    )
+  } catch {
+    // ignore (private mode / quota)
+  }
+}
+
+function clearVerified() {
+  try {
+    localStorage.removeItem(VERIFY_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
 export default function VideoPlayer() {
   const { id: paramId } = useParams()
   const [searchParams] = useSearchParams()
@@ -16,10 +52,11 @@ export default function VideoPlayer() {
   const widgetIdRef = useRef(null)
 
   const [copied, setCopied] = useState(false)
-  const [verified, setVerified] = useState(false)
+  // Cek localStorage dulu supaya user yang sudah verifikasi tidak diminta lagi
+  const [verified, setVerified] = useState(() => isAlreadyVerified())
   const [turnstileError, setTurnstileError] = useState('')
 
-  // Render Turnstile widget (hanya di halaman /v/)
+  // Render Turnstile widget (hanya di halaman /v/ dan hanya jika belum verified)
   const renderTurnstile = useCallback(() => {
     if (!window.turnstile || !turnstileRef.current) return
 
@@ -35,10 +72,13 @@ export default function VideoPlayer() {
       sitekey: TURNSTILE_SITE_KEY,
       theme: 'light',
       callback: () => {
+        markVerified()
         setVerified(true)
         setTurnstileError('')
       },
       'expired-callback': () => {
+        // Token widget expired → minta verifikasi ulang
+        clearVerified()
         setVerified(false)
         setTurnstileError('Verification expired. Please try again.')
       },
@@ -50,7 +90,7 @@ export default function VideoPlayer() {
   }, [])
 
   useEffect(() => {
-    if (verified) return // sudah lolos, tidak perlu render lagi
+    if (verified) return // sudah lolos (dari state atau localStorage), tidak perlu render lagi
 
     if (window.turnstile) {
       renderTurnstile()
