@@ -1,44 +1,11 @@
 /**
  * POST /api/upload → proxy ke videy.co/api/upload
- * + optional Cloudflare Turnstile verification
- *
- * Untuk aktifkan verifikasi server-side:
- * 1. Di Cloudflare Pages → Settings → Environment variables
- *    tambahkan TURNSTILE_SECRET_KEY = (secret key dari dashboard Turnstile)
- * 2. Redeploy
+ * Turnstile hanya dipakai di halaman /v/, bukan di upload.
  */
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request }) {
   try {
     const formData = await request.formData()
     const file = formData.get('file')
-    const turnstileToken = formData.get('cf-turnstile-response')
-
-    // ===== Optional Turnstile verification =====
-    const secret = env?.TURNSTILE_SECRET_KEY
-    if (secret) {
-      if (!turnstileToken || typeof turnstileToken !== 'string') {
-        return Response.json({ error: 'Turnstile token required' }, { status: 403 })
-      }
-
-      const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          secret,
-          response: turnstileToken,
-          remoteip: request.headers.get('CF-Connecting-IP') || '',
-        }),
-      })
-
-      const verifyData = await verifyRes.json().catch(() => ({}))
-      if (!verifyData.success) {
-        return Response.json(
-          { error: 'Turnstile verification failed', 'error-codes': verifyData['error-codes'] },
-          { status: 403 }
-        )
-      }
-    }
-    // ===========================================
 
     if (!file || typeof file === 'string') {
       return Response.json({ error: 'No file' }, { status: 400 })
@@ -82,7 +49,7 @@ export async function onRequestPost({ request, env }) {
       return Response.json({ error: 'Invalid response' }, { status: 502 })
     }
 
-    // Bangun CDN URL berdasarkan host request (mirip config.js)
+    // Bangun CDN URL berdasarkan host request
     const host = new URL(request.url).hostname
     let cdnBase = 'https://cdn.videy.co'
     if (host.endsWith('.pages.dev')) {

@@ -1,80 +1,19 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Footer from '../components/Footer'
 
 const UPLOAD_API = '/api/upload'
-const TURNSTILE_SITE_KEY = '0x4AAAAAAF-N4cGvBQXckJzF'
 
 export default function Home() {
   const fileRef = useRef(null)
-  const turnstileRef = useRef(null)
-  const widgetIdRef = useRef(null)
   const navigate = useNavigate()
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
-  const [turnstileToken, setTurnstileToken] = useState('')
-
-  // Render Turnstile widget
-  const renderTurnstile = useCallback(() => {
-    if (!window.turnstile || !turnstileRef.current) return
-
-    // Clear previous if any
-    if (widgetIdRef.current !== null) {
-      try {
-        window.turnstile.remove(widgetIdRef.current)
-      } catch {}
-      widgetIdRef.current = null
-    }
-
-    turnstileRef.current.innerHTML = ''
-    widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
-      sitekey: TURNSTILE_SITE_KEY,
-      theme: 'light',
-      callback: (token) => {
-        setTurnstileToken(token)
-        setError('')
-      },
-      'expired-callback': () => {
-        setTurnstileToken('')
-      },
-      'error-callback': () => {
-        setTurnstileToken('')
-        setError('Turnstile verification failed. Please try again.')
-      },
-    })
-  }, [])
-
-  useEffect(() => {
-    // Wait for Turnstile script
-    if (window.turnstile) {
-      renderTurnstile()
-    } else {
-      const interval = setInterval(() => {
-        if (window.turnstile) {
-          clearInterval(interval)
-          renderTurnstile()
-        }
-      }, 200)
-      return () => clearInterval(interval)
-    }
-
-    return () => {
-      if (widgetIdRef.current !== null && window.turnstile) {
-        try {
-          window.turnstile.remove(widgetIdRef.current)
-        } catch {}
-      }
-    }
-  }, [renderTurnstile])
 
   const onPick = () => {
     setError('')
-    if (!turnstileToken) {
-      setError('Please complete the security check first.')
-      return
-    }
     fileRef.current?.click()
   }
 
@@ -82,11 +21,6 @@ export default function Home() {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-
-    if (!turnstileToken) {
-      setError('Please complete the security check first.')
-      return
-    }
 
     if (!file.type.startsWith('video/')) {
       setError('File harus berupa video.')
@@ -105,7 +39,6 @@ export default function Home() {
 
     const form = new FormData()
     form.append('file', file)
-    form.append('cf-turnstile-response', turnstileToken)
 
     const xhr = new XMLHttpRequest()
 
@@ -122,13 +55,6 @@ export default function Home() {
           setProgress(100)
           setTimeout(() => {
             setUploading(false)
-            // Reset Turnstile after successful upload
-            setTurnstileToken('')
-            if (window.turnstile && widgetIdRef.current !== null) {
-              try {
-                window.turnstile.reset(widgetIdRef.current)
-              } catch {}
-            }
             navigate(`/v/${encodeURIComponent(data.id)}`)
           }, 250)
         } else {
@@ -138,13 +64,6 @@ export default function Home() {
         setError(err.message || 'Upload gagal.')
         setUploading(false)
         setProgress(0)
-        // Reset token on error so user can retry
-        setTurnstileToken('')
-        if (window.turnstile && widgetIdRef.current !== null) {
-          try {
-            window.turnstile.reset(widgetIdRef.current)
-          } catch {}
-        }
       }
     }
 
@@ -152,12 +71,6 @@ export default function Home() {
       setError('Network error. Coba lagi.')
       setUploading(false)
       setProgress(0)
-      setTurnstileToken('')
-      if (window.turnstile && widgetIdRef.current !== null) {
-        try {
-          window.turnstile.reset(widgetIdRef.current)
-        } catch {}
-      }
     }
 
     xhr.open('POST', UPLOAD_API)
@@ -181,21 +94,11 @@ export default function Home() {
               </p>
 
               {!uploading ? (
-                <div className="pt-4 space-y-5">
-                  {/* Cloudflare Turnstile Widget */}
-                  <div className="flex justify-center">
-                    <div ref={turnstileRef} />
-                  </div>
-
+                <div className="pt-4">
                   <button
                     type="button"
                     onClick={onPick}
-                    disabled={!turnstileToken}
-                    className={`inline-flex items-center justify-center px-8 py-3 font-semibold rounded-full transition-all duration-200 min-w-[180px] ${
-                      turnstileToken
-                        ? 'bg-gray-900 text-white hover:bg-gray-800 hover:scale-105 active:scale-95'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
+                    className="inline-flex items-center justify-center px-8 py-3 bg-gray-900 text-white font-semibold rounded-full hover:bg-gray-800 transition-all duration-200 hover:scale-105 active:scale-95 min-w-[180px]"
                   >
                     Upload Video
                   </button>

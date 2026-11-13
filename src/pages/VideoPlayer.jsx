@@ -1,6 +1,8 @@
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { getVideoUrl } from '../config'
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAAF-N4cGvBQXckJzF'
 
 export default function VideoPlayer() {
   const { id: paramId } = useParams()
@@ -10,11 +12,70 @@ export default function VideoPlayer() {
 
   const videoRef = useRef(null)
   const adContainerRef = useRef(null)
-  const [copied, setCopied] = useState(false)
+  const turnstileRef = useRef(null)
+  const widgetIdRef = useRef(null)
 
-  // Semua iklan hanya dari API (tidak ada hardcoded)
+  const [copied, setCopied] = useState(false)
+  const [verified, setVerified] = useState(false)
+  const [turnstileError, setTurnstileError] = useState('')
+
+  // Render Turnstile widget (hanya di halaman /v/)
+  const renderTurnstile = useCallback(() => {
+    if (!window.turnstile || !turnstileRef.current) return
+
+    if (widgetIdRef.current !== null) {
+      try {
+        window.turnstile.remove(widgetIdRef.current)
+      } catch {}
+      widgetIdRef.current = null
+    }
+
+    turnstileRef.current.innerHTML = ''
+    widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: 'light',
+      callback: () => {
+        setVerified(true)
+        setTurnstileError('')
+      },
+      'expired-callback': () => {
+        setVerified(false)
+        setTurnstileError('Verification expired. Please try again.')
+      },
+      'error-callback': () => {
+        setVerified(false)
+        setTurnstileError('Verification failed. Please try again.')
+      },
+    })
+  }, [])
+
   useEffect(() => {
-    if (!adContainerRef.current) return
+    if (verified) return // sudah lolos, tidak perlu render lagi
+
+    if (window.turnstile) {
+      renderTurnstile()
+    } else {
+      const interval = setInterval(() => {
+        if (window.turnstile) {
+          clearInterval(interval)
+          renderTurnstile()
+        }
+      }, 200)
+      return () => clearInterval(interval)
+    }
+
+    return () => {
+      if (widgetIdRef.current !== null && window.turnstile) {
+        try {
+          window.turnstile.remove(widgetIdRef.current)
+        } catch {}
+      }
+    }
+  }, [renderTurnstile, verified])
+
+  // Load iklan hanya setelah verified
+  useEffect(() => {
+    if (!verified || !adContainerRef.current) return
 
     const getAdGroup = () => {
       try {
@@ -55,7 +116,6 @@ export default function VideoPlayer() {
       .then((data) => {
         if (!adContainerRef.current || !data) return
 
-        // Bersihkan container
         adContainerRef.current.innerHTML = ''
 
         const banner =
@@ -66,16 +126,13 @@ export default function VideoPlayer() {
 
         if (!banner) return
 
-        // Inject HTML + jalankan script dengan benar
         const wrapper = document.createElement('div')
         wrapper.innerHTML = banner
 
-        // Script dari innerHTML tidak auto-execute → buat ulang
         const scripts = Array.from(wrapper.querySelectorAll('script'))
         scripts.forEach((oldScript) => {
           const newScript = document.createElement('script')
 
-          // copy attributes
           Array.from(oldScript.attributes).forEach((attr) => {
             newScript.setAttribute(attr.name, attr.value)
           })
@@ -87,28 +144,28 @@ export default function VideoPlayer() {
             newScript.textContent = oldScript.textContent
           }
 
-          // ganti script lama dengan yang baru
           oldScript.parentNode?.replaceChild(newScript, oldScript)
         })
 
         adContainerRef.current.appendChild(wrapper)
       })
       .catch(() => {
-        // silent fail – jangan ganggu pengalaman video
+        // silent fail
       })
 
     return () => controller.abort()
-  }, [id])
+  }, [id, verified])
 
   useEffect(() => {
     document.title = id ? `Navidey - ${id}` : 'Navidey'
   }, [id])
 
   useEffect(() => {
+    if (!verified) return
     const v = videoRef.current
     if (!v || !videoSrc) return
     v.play()?.catch(() => {})
-  }, [videoSrc])
+  }, [videoSrc, verified])
 
   const handleShare = async () => {
     const url = window.location.href
@@ -123,6 +180,70 @@ export default function VideoPlayer() {
     } catch {}
   }
 
+  // ===== Gate: tampilkan Turnstile dulu =====
+  if (!verified) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <header className="pt-3 pb-3 lg:pt-4 lg:pb-4">
+          <div className="max-w-6xl mx-auto px-6 lg:px-8">
+            <div className="flex items-center justify-between">
+              <Link to="/" className="flex items-center">
+                <span className="font-semibold text-[26px] tracking-[-2px] text-gray-900">
+                  navidey
+                </span>
+              </Link>
+              <Link
+                to="/"
+                className="flex items-center space-x-2 px-4 py-1.5 bg-gray-900 text-white font-semibold rounded-full hover:bg-gray-800 transition-colors text-[15px]"
+              >
+                <span>Upload</span>
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex-grow flex items-center justify-center px-6">
+          <div className="text-center space-y-6 max-w-md w-full">
+            <h1 className="text-2xl font-semibold text-gray-900">
+              Security Check
+            </h1>
+            <p className="text-gray-600 text-sm">
+              Please complete the verification to continue watching.
+            </p>
+
+            <div className="flex justify-center">
+              <div ref={turnstileRef} />
+            </div>
+
+            {turnstileError && (
+              <p className="text-sm text-red-600">{turnstileError}</p>
+            )}
+          </div>
+        </div>
+
+        <footer className="pb-6">
+          <div className="max-w-6xl mx-auto px-6 lg:px-8">
+            <div className="flex items-center justify-center space-x-8">
+              <Link
+                to="/terms-of-service"
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Terms of Service
+              </Link>
+              <Link
+                to="/report"
+                className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Report Abuse
+              </Link>
+            </div>
+          </div>
+        </footer>
+      </div>
+    )
+  }
+
+  // ===== Setelah verified: tampilkan video =====
   return (
     <div className="min-h-screen">
       <div className="min-h-screen flex flex-col">
@@ -191,7 +312,7 @@ export default function VideoPlayer() {
             </button>
           </div>
 
-          {/* Container iklan – semua diisi dari /api/ad_type */}
+          {/* Container iklan */}
           <div ref={adContainerRef} className="as mt-4 flex flex-col items-center" />
         </div>
 
